@@ -4,7 +4,7 @@
 
 library(dplyr)
 library(ggplot2)
-
+library(ggbeeswarm)
 source('./analyse_cnv_inv_functions.R')
 
 
@@ -83,7 +83,7 @@ SDi_with_GT = left_join(SDi_chromcenter_nswitch, gts, by=c('inv_chr','inv_start'
 # This is a big step here. We want to filter our list of affected SDs by:
 # - SD pair should only be affected by ONE inversion (otherwise interpretation gets tricky)
 # - Inversion should have <10 GTs with noreads or lowconf reads.
-SDi_with_GT_goodsamples = filter_down_SD_INV_list(SDi_with_GT,)
+SDi_with_GT_goodsamples = filter_down_SD_INV_list(SDi_with_GT)
 
 # Now, mark which inversions are likely protective, risky and mixed. 
 # We consider 'protective' if <20% of SD-pair-basepairs switch from protect to risk
@@ -98,9 +98,15 @@ invcenter = left_join(invcenter2, sdnosd, by=c('inv_chr' ,'inv_start'  ,'inv_end
 #invcenter = invcenter[invcenter$class != 'invs_unprocessed.bed',]
 
 # Make plots and stat.tests
+
+# Max size of inversion to consider in plot
 limit = 200000
+
+# Plot stuff
 g = make_plot(invcenter, limit=limit)
 g
+
+# Make tests
 make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'a Protective', 'b SV risk factor')
 make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'a Protective', 'c Mixed')
 make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'c Mixed', 'b SV risk factor')
