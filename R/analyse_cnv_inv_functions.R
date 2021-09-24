@@ -11,7 +11,7 @@ cut_down_len <- function(SD_f, params_f){
 
 add_sd_stats <- function(SD_f){
   SD_f$sdlen = SD_f$source_end - SD_f$source_start
-  SD_f$pairlen = abs(SD_f$source_end - SD_f$target_end)
+  SD_f$pairlen = abs(SD_f$source_start - SD_f$target_end)
   SD_f$invlen = SD_f$inv_end - SD_f$inv_start
   return(SD_f)
 }
@@ -42,6 +42,31 @@ prep_df_bed <- function(SDi_f){
   return(df_bed)
 }
 
+# Prepare a bedfile that IGV will color 
+prep_df_bed2 <- function(SDi_f){
+  df_bed = unique(SDi_f[,c('source_chr', 'source_start', 'target_end', 'orientation')])
+  #df_bed = df_bed[df_bed$source_start < df_bed$target_end,]
+  df_bed$realstart = df_bed$source_start
+  df_bed[df_bed$source_start > df_bed$target_end,]$realstart = df_bed[df_bed$source_start > df_bed$target_end,]$target_end
+  df_bed$realend = df_bed$target_end
+  df_bed[df_bed$source_start > df_bed$target_end,]$realend = df_bed[df_bed$source_start > df_bed$target_end,]$source_start
+  
+  df_bed$source_start = df_bed$realstart
+  df_bed$target_end = df_bed$realend
+  
+  df_bed$realstart = NULL
+  df_bed$realend = NULL
+  df_bed$V5 = 0
+  df_bed$V6 = df_bed$orientation
+  df_bed$V7 = df_bed$source_start
+  df_bed$V8 = df_bed$target_end
+  df_bed$V9 = 'col'
+  df_bed[df_bed$orientation == '+',]$V9 = "201,50,91"
+  df_bed[df_bed$orientation == '-',]$V9 = "50,194,50"
+  
+  return(df_bed)
+}
+
 
 filter_down_SD_INV_list <- function(SDi_with_GT){
   
@@ -55,12 +80,12 @@ filter_down_SD_INV_list <- function(SDi_with_GT){
 
 mark_protective_risk_mixed_invs <- function(invcenter, n1, n2){
   
-  invcenter$mix = 'c Mixed'
-  invcenter[invcenter$pctpos < n1,]$mix = 'b SV risk factor'
-  invcenter[invcenter$pctpos > n2,]$mix = 'a Protective'
+  invcenter$mix = 'Mixed'
+  invcenter[invcenter$pctpos < n1,]$mix = 'SV risk factor'
+  invcenter[invcenter$pctpos > n2,]$mix = 'Protective'
   
   # While we are at it, also note the length from SD1 to SD2
-  invcenter$SDpairlen = abs(invcenter$source_start - invcenter$target_end)
+  invcenter$SDpairlen = abs(invcenter$source_start - invcenter$target_start)
   
   return(invcenter)
 }
@@ -81,4 +106,38 @@ make_wilcox <- function(df, group1, group2){
   x = df[df$mix == group1,]$inv_alleles
   y = df[df$mix == group2,]$inv_alleles
   wilcox.test(x,y, alternative='greater', exact=F)
+}
+
+
+moveme <- function (invec, movecommand) {
+  movecommand <- lapply(strsplit(strsplit(movecommand, ";")[[1]], 
+                                 ",|\\s+"), function(x) x[x != ""])
+  movelist <- lapply(movecommand, function(x) {
+    Where <- x[which(x %in% c("before", "after", "first", 
+                              "last")):length(x)]
+    ToMove <- setdiff(x, Where)
+    list(ToMove, Where)
+  })
+  myVec <- invec
+  for (i in seq_along(movelist)) {
+    temp <- setdiff(myVec, movelist[[i]][[1]])
+    A <- movelist[[i]][[2]][1]
+    if (A %in% c("before", "after")) {
+      ba <- movelist[[i]][[2]][2]
+      if (A == "before") {
+        after <- match(ba, temp) - 1
+      }
+      else if (A == "after") {
+        after <- match(ba, temp)
+      }
+    }
+    else if (A == "first") {
+      after <- 0
+    }
+    else if (A == "last") {
+      after <- length(myVec)
+    }
+    myVec <- append(temp, values = movelist[[i]][[1]], after = after)
+  }
+  myVec
 }

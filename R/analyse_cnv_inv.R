@@ -11,12 +11,13 @@ source('./analyse_cnv_inv_functions.R')
 ######### Set parameters ##########################################
 params = list()
 params$min_sd_len = 10000 # 10kb
-params$max_pairlen = 10 * 1000 * 1000 # 10Mb. 
+params$max_pairlen = 1e10 # Unlimited
+params$sds_protect_ro_risk_th = 0.000000000001#0.00000000001#0.10 #1e-10 # 0 + tiny
 
 SD_link = '../data/SD/SDs_with_inv.bed'
 gt_link = "../data/INV/polished_GT_table.tsv"
 SD_noSD_link = '../data/INV/inversion_class_refinement.txt'
-
+mcnv_link = '../data/mCNV/as_bed/decipher.bed'
 ######### GO ######################################################
 
 # Part 1: find all SD pairs which are affected by an inversion. 
@@ -28,6 +29,8 @@ colnames(SD) = c('source_chr', 'source_start', 'source_end', 'orientation',
                 'target_chr','target_start', 'target_end', 'pairID',
                 'inv_chr', 'inv_start', 'inv_end', 'overlap_size')
 
+ggplot(
+  SD) + geom_histogram(aes(x=(source_end - source_start)))
 # Cut down to min len
 SD_cut = cut_down_len(SD, params)
 
@@ -45,6 +48,7 @@ df_bed = prep_df_bed(SDi)
 # Make another bedfile for igv^^
 SDi_bed = SDi[,c('source_chr', 'source_start', 'source_end')]
 
+
 # Save #
 write.table(file = "~/Desktop/df_bed.bed", na.omit(df_bed), col.names = F, row.names = F, quote=F, sep='\t')
 write.table(file = "~/Desktop/sdi_bed.bed", na.omit(SDi_bed), col.names = F, row.names = F, quote=F, sep='\t')
@@ -60,7 +64,7 @@ write.table(file = "~/Desktop/sdi_bed.bed", na.omit(SDi_bed), col.names = F, row
 SDi_touch_inv = SDi[SDi$inv_chr != '.',]
 
 #SDi_plus = SDi_touch_inv[SDi_touch_inv$source_start < SDi_touch_inv$target_start,]
-SDi_regions = SDi_touch_inv[,c('source_chr','source_start', 'target_end', 'orientation', 'inv_chr', 'inv_start', 'inv_end', 'pairID')]
+SDi_regions = SDi_touch_inv[,c('source_chr','source_start', 'source_end', 'target_end','target_start', 'orientation', 'inv_chr', 'inv_start', 'inv_end', 'pairID')]
 
 # Inversion-wise statistics: are all affected SD pairs in pos or neg directions? 
 # How many SD pairs does this inversion affect?
@@ -80,42 +84,83 @@ gts = gts[, c('seqnames','start','end','nref','nhet','nhom','ncomplex','ninvdup'
 colnames(gts)[1:3] = c('inv_chr','inv_start','inv_end')
 SDi_with_GT = left_join(SDi_chromcenter_nswitch, gts, by=c('inv_chr','inv_start','inv_end'))
 
+# For the record
+length(unique(SDi_with_GT[SDi_with_GT$n_switches == 1,]))
+
 # This is a big step here. We want to filter our list of affected SDs by:
 # - SD pair should only be affected by ONE inversion (otherwise interpretation gets tricky)
 # - Inversion should have <10 GTs with noreads or lowconf reads.
 SDi_with_GT_goodsamples = filter_down_SD_INV_list(SDi_with_GT)
 
 # Now, mark which inversions are likely protective, risky and mixed. 
-# We consider 'protective' if <20% of SD-pair-basepairs switch from protect to risk
-# We consider 'risky' if >80% of SD-pair-basepairs switch from protect to risk
-invcenter = mark_protective_risk_mixed_invs(SDi_with_GT_goodsamples, 0.2,0.8)
-
+# We consider 'protective' if  < sds_protect_ro_risk_th of SD-pair-basepairs switch from protect to risk
+# We consider 'risky' if > 1-x% of SD-pair-basepairs switch from protect to risk
+invcenter = mark_protective_risk_mixed_invs(SDi_with_GT_goodsamples, 
+                                            params$sds_protect_ro_risk_th, 
+                                            1-params$sds_protect_ro_risk_th)
 
 # More info still. We also want to know the inversion class. SD-mediated? nonSD-mediated?
 sdnosd = read.table(SD_noSD_link, header=F, sep='\t')
 colnames(sdnosd) = c('inv_chr' ,'inv_start'  ,'inv_end','class')
-invcenter = left_join(invcenter2, sdnosd, by=c('inv_chr' ,'inv_start'  ,'inv_end'))
-#invcenter = invcenter[invcenter$class != 'invs_unprocessed.bed',]
+invcenter = left_join(invcenter, sdnosd, by=c('inv_chr' ,'inv_start'  ,'inv_end'))
 
-# Make plots and stat.tests
+# Add mCNVs
+mcnv_list = read.table(mcnv_link, header=F, sep='\t')
+colnames(mcnv_list) = c('chr','start','end','mCNV name', 'genome','gt','del/dup','len')
+mcnv_list$chr = paste0('chr',mcnv_list$chr)
+
+# Bedtools
+invcenter = invcenter[moveme(names(invcenter), "inv_chr first; inv_start after inv_chr; inv_end after inv_start")]
+invcenter_protect_risk = invcenter[invcenter$mix != 'Mixed',]
+overlap_main = bedtoolsr::bt.intersect(invcenter_protect_risk, mcnv_list, wao=T)
+colnames(overlap_main) = c(colnames(invcenter_protect_risk), colnames(mcnv_list))
+head(overlap_main)  
+  
+# To_save
+cols_to_save = c('inv_chr','inv_start','inv_end', 'orientation','inv_n_alterations', 'mix','nref','nhet','nhom','ncomplex','ninvdup','nnoreads','nlowconf','class', 'mCNV name')
+overlap_save = overlap_main[,cols_to_save]
+overlap_save = overlap_save[overlap_save$`mCNV name` != '.',]
+colnames(overlap_save)[colnames(overlap_save) == 'orientation'] = 'SDpairs_orientation'
+colnames(overlap_save)[colnames(overlap_save) == 'inv_n_alterations'] = 'SDpairs_flipped'
+colnames(overlap_save)[colnames(overlap_save) == 'class'] = 'Inversion_class'
+colnames(overlap_save)[colnames(overlap_save) == 'mix'] = 'inv_role'
+
+write.table(overlap_save, file='invs_affecting_sds_affecting_mcnvs_strict.tsv', row.names=F, col.names=T, quote=F, sep='\t')
+### Now 
+# Made a bedfile for igv
+invcenter_bed = prep_df_bed2(invcenter[invcenter$mix != 'Mixed',])
+write.table(invcenter_bed, file='~/Desktop/protect_risk.bed', sep='\t', col.names = F, row.names=F, quote=F)
+# Make another bedfile for igv^^
+SDi_bed = SDi[,c('source_chr', 'source_start', 'source_end')]
+
+
+# Make plots and stat.tests #
+
+# Plot length of all interesting SD pairs
+ggplot(data=SDi[(SDi$target_start > SDi$source_start),]) + 
+  geom_histogram(aes(x = abs(target_start - source_start), fill=orientation)) + 
+  scale_x_log10() + 
+  theme_bw()
+
+# plot length of inversting SD pairs being flipped by one inversion only, in the same directions
+ggplot(data=invcenter[invcenter$mix != 'Mixed',]) + 
+  geom_histogram(aes(x=SDpairlen, fill=mix)) + 
+  scale_x_log10() + 
+  theme_bw()
+
 
 # Max size of inversion to consider in plot
 limit = 200000
 
-# Plot stuff
+# Plot that invcenter plot for genotypes
 g = make_plot(invcenter, limit=limit)
 g
 
 # Make tests
-make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'a Protective', 'b SV risk factor')
-make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'a Protective', 'c Mixed')
-make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'c Mixed', 'b SV risk factor')
+make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'Protective', 'SV risk factor')
+make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'Protective', 'Mixed')
+make_wilcox(invcenter[invcenter$inv_end-invcenter$inv_start < limit,], 'Mixed', 'SV risk factor')
 
-ablub = (invcenter[invcenter$inv_end-invcenter$inv_start < limit,])
-print(blub$class)
-
-
-ggplot(invcenter) + geom_histogram(aes(x=log10(abs(inv_end - inv_start)), fill=mix), bins=5)
 
 
 
@@ -130,9 +175,9 @@ ggplot(invcenter) + geom_histogram(aes(x=log10(abs(inv_end - inv_start)), fill=m
 # invcenter = SDi_simp %>% group_by(inv_start) %>% slice(1)
 
 # 
-# invcenter$catpos = 'c Mixed'
-# invcenter[invcenter$pctpos < 0.1,]$catpos = 'b SV risk factor'
-# invcenter[invcenter$pctpos > 0.9,]$catpos = 'a Protective'
+# invcenter$catpos = 'Mixed'
+# invcenter[invcenter$pctpos < 0.1,]$catpos = 'SV risk factor'
+# invcenter[invcenter$pctpos > 0.9,]$catpos = 'Protective'
 # invcenter$mix = invcenter$catpos
 # 
 # g = make_plot(invcenter, limit=limit)
@@ -148,3 +193,4 @@ ggplot(invcenter) + geom_histogram(aes(x=log10(abs(inv_end - inv_start)), fill=m
 # 
 # ggplot(blub) + 
 #   geom_beeswarm(aes(x=pctpos, y=ncomplex, color=log10(inv_end-inv_start))) + scale_color_viridis_b()
+
