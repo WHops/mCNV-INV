@@ -5,38 +5,97 @@
 # blub
 
 
-# Functions for mCNV-INV-SD analysis.
-# To be documented better...
+#' add_SD_colnames
+#' @description Append colnames to SD. A bit silly to have a separate function
+#' for this but it is what it is :) 
+#'
+#' @param SD_f [df] SD pair dataframe
+#' @return SD_f, the same datamframe but with colnames.
+#'
+#' @author Wolfram Höps
+#' @export
+add_SD_colnames <- function(SD_df){
+  
+  SD_colnames = c('source_chr', 'source_start', 'source_end', 'orientation',
+                  'target_chr','target_start', 'target_end', 'pairID',
+                  'inv_chr', 'inv_start', 'inv_end', 'overlap_size')
+  
+  colnames(SD_df) = SD_colnames
+  
+  return(SD_df)
+}
 
-cut_down_len <- function(SD_f, params_f){
-  #SD_f = tibble(SD[1:10,])
-  #SD_f$lendissatisfy = (SD_f$source_end - SD_f$source_start) < params_f$min_sd_len
-  SD_f = SD_f %>% group_by(pairID) %>% mutate(valid = all(source_end - source_start > params_f$min_sd_len))
-  #SD_f$lds = as.data.frame(xtabs(lendissatisfy ~ pairID, SD_f))$Freq
-  SD_f = SD_f[SD_f$valid > 0,]
+
+#' SD_keep_only_pairs_above_len
+#' @description keep only pairs in which source_end is at least 'min_sd_len'-bps away from start.  
+#'
+#' @param SD_f [df] SD pair dataframe
+#' @param min_sd_len [numeric] minimal SDpair-len [bp]
+#' @return SD_f, the same datamframe but filtered. 
+#'
+#' @author Wolfram Höps
+#' @export
+SD_keep_only_pairs_above_len <- function(SD_f, min_sd_len){
+  # Keep only pairs in which source_end is at least 'min_sd_len'-bps away from start.  
+  SD_f = SD_f %>% group_by(pairID) %>% filter(all((source_end - source_start) > min_sd_len))
+
   return(SD_f)
 }
 
+#' add_sd_stats
+#' @description enrich SD dataframe with additional information. 
+#' Useful for easier data processing downstream. 
+#'
+#' @param SD_f [df] SD pair dataframe
+#' @return SD_f, the same datamframe but with more columns
+#'
+#' @author Wolfram Höps
+#' @export
 add_sd_stats <- function(SD_f){
+  
   SD_f$sdlen = SD_f$source_end - SD_f$source_start
   SD_f$pairlen = abs(SD_f$source_start - SD_f$target_end)
   SD_f$invlen = SD_f$inv_end - SD_f$inv_start
+  
   return(SD_f)
 }
 
-# Determine for all pairs if they have any overlap, and if all overlaps are the same.
-# The interesting pairs are the ones where this is both F.
+
+#' find_SDs_with_inv_interference_potential
+#' @description determine for all pairs if they have any overlap, and if all overlaps are the same.
+#' The interesting pairs are the ones where this is both F.
+#'
+#' @param SD_f [df] SD pair dataframe
+#' @return SD_f, the same datamframe but filtered
+#'
+#' @author Wolfram Höps
+#' @export
 find_SDs_with_inv_interference_potential <- function(SD_f){
+  
+  # Noverlap: pairs which dont overlap any invs.
+  # sameverlap: pairs where both pairs overlap same inv (i.e. are nested in the inv)
   SD2 = SD_f %>% group_by(pairID) %>% 
     mutate(noverlap = all(inv_chr=='.'),
            sameverlap = var(inv_start) == 0)
+  
+  # the 'i' is for interesting. 
   SDi = SD2[(SD2$noverlap == F) & (SD2$sameverlap == F),]
-  SDi$filled = SDi$sdlen/ (SDi$inv_end - SDi$inv_start) 
+  
+  SDi$filled = SDi$sdlen / (SDi$inv_end - SDi$inv_start) 
+  
   return(SDi)
 }
 
-# Prepare a bedfile that IGV will color 
+#' prep_df_bed
+#' @description # Prepare a bedfile that IGV will color 
+#'
+#' @param SD_f [df] SD pair dataframe
+#' @return df_bed, a dataframe in bed format. 
+#'
+#' @author Wolfram Höps
+#' @export
 prep_df_bed <- function(SDi_f){
+  
   df_bed = unique(SDi_f[,c('source_chr', 'source_start', 'target_end', 'orientation')])
   df_bed = df_bed[df_bed$source_start < df_bed$target_end,]
   df_bed$V5 = 0
@@ -50,7 +109,14 @@ prep_df_bed <- function(SDi_f){
   return(df_bed)
 }
 
-# Prepare a bedfile that IGV will color 
+#' prep_df_bed2
+#' @description Prepare a bedfile that IGV will color
+#'
+#' @param SDi_f [df] SD pair dataframe
+#' @return df_bed, a dataframe in bed format. 
+#'
+#' @author Wolfram Höps
+#' @export
 prep_df_bed2 <- function(SDi_f){
   df_bed = unique(SDi_f[,c('source_chr', 'source_start', 'target_end', 'orientation')])
   #df_bed = df_bed[df_bed$source_start < df_bed$target_end,]
@@ -76,7 +142,16 @@ prep_df_bed2 <- function(SDi_f){
 }
 
 
+#' filter_down_SD_INV_list
+#' @description 
+#'
+#' @param SDi_with_GT [df] SD pair dataframe
+#' @return df_bed, a dataframe in bed format. 
+#'
+#' @author Wolfram Höps
+#' @export
 filter_down_SD_INV_list <- function(SDi_with_GT){
+  
   
   SDi_simp = SDi_with_GT[SDi_with_GT$n_switches == 1,]
   
@@ -86,6 +161,14 @@ filter_down_SD_INV_list <- function(SDi_with_GT){
   return(invcenter)
 }
 
+#' filter_down_SD_INV_list_nofilter_but_turn
+#' @description 
+#'
+#' @param SDi_with_GT [df] SD pair dataframe
+#' @return  
+#'
+#' @author Wolfram Höps
+#' @export
 filter_down_SD_INV_list_nofilter_but_turn <- function(SDi_with_GT){
   
   SDi_simp = SDi_with_GT[SDi_with_GT$n_switches == 1,]
@@ -96,6 +179,16 @@ filter_down_SD_INV_list_nofilter_but_turn <- function(SDi_with_GT){
   return(invcenter)
 }
 
+#' mark_protective_risk_mixed_invs
+#' @description 
+#'
+#' @param invcenter
+#' @param n1
+#' @param n2
+#' @return  
+#'
+#' @author Wolfram Höps
+#' @export
 mark_protective_risk_mixed_invs <- function(invcenter, n1, n2){
   
   invcenter$mix = 'Mixed'
@@ -108,6 +201,15 @@ mark_protective_risk_mixed_invs <- function(invcenter, n1, n2){
   return(invcenter)
 }
 
+#' make_plot
+#' @description 
+#'
+#' @param invcenter
+#' @param limit
+#' @return  
+#'
+#' @author Wolfram Höps
+#' @export
 make_plot <- function(invcenter, limit){
   p = ggplot(invcenter[(invcenter$inv_end-invcenter$inv_start < limit) & (invcenter$mix != 0),]) +
     geom_boxplot(aes(group=mix, x=mix, y= (nhet+(2*nhom)) / (43*2), fill=mix)) + scale_color_viridis_b() +
@@ -118,7 +220,16 @@ make_plot <- function(invcenter, limit){
 }
 
 
-# Do t-test
+#' make_wilcox
+#' @description run t.test
+#'
+#' @param df
+#' @param group1
+#' @param group2
+#' @return  
+#'
+#' @author Wolfram Höps
+#' @export
 make_wilcox <- function(df, group1, group2){
   df$inv_alleles = df$nhet + 2*df$nhom
   x = df[df$mix == group1,]$inv_alleles
@@ -126,7 +237,17 @@ make_wilcox <- function(df, group1, group2){
   wilcox.test(x,y, alternative='greater', exact=F)
 }
 
-
+#' moveme
+#' @description A helperfunction
+#'
+#' @param df
+#' @param group1
+#' @param group2
+#' @return  
+#'
+#' @author Ananda Mahto,
+#' https://gist.github.com/mrdwab/7183841
+#' @export
 moveme <- function (invec, movecommand) {
   movecommand <- lapply(strsplit(strsplit(movecommand, ";")[[1]], 
                                  ",|\\s+"), function(x) x[x != ""])
@@ -158,4 +279,29 @@ moveme <- function (invec, movecommand) {
     myVec <- append(temp, values = movelist[[i]][[1]], after = after)
   }
   myVec
+}
+
+#' determine_directionality_of_affected_SDs_below_inv
+#' @description A helperfunction
+#'
+#' @param df
+#' @param group1
+#' @param group2
+#' @return  
+#'
+#' @author Wolfram Höps
+#' @export
+determine_directionality_of_affected_SDs_below_inv <- function(SD_df){
+  SDi_chromcenter = SDi_regions %>% group_by(inv_start) %>% mutate(
+    inv_n_alterations = length(inv_chr),
+    allp = all(orientation == '+'),
+    alln = all(orientation == '-'),
+    pctpos = sum((abs(
+      target_end - source_start
+    ))[orientation == '+']) / sum(abs(target_end - source_start)),
+    mix =
+      any(allp) + 2 * any(alln)
+  )
+  
+  return(SDi_chromcenter)
 }
