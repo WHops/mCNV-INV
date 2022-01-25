@@ -1,11 +1,19 @@
-# Whoeps, 20th Sep 2021
+# # Whoeps, 20th Sep 2021
+# df = data.frame(Category = c('First','First','Second'), x=c(1,2,5))
+# 
+# df %>% group_by(Category) %>% mutate(sum = sum(x))
+# blub
+
+
 # Functions for mCNV-INV-SD analysis.
 # To be documented better...
 
 cut_down_len <- function(SD_f, params_f){
-  SD_f = SD_f %>% group_by(pairID) %>% 
-    mutate(valid = all(source_end - source_start > params_f$min_sd_len))
-  SD_f = SD_f[SD_f$valid == T,]
+  #SD_f = tibble(SD[1:10,])
+  #SD_f$lendissatisfy = (SD_f$source_end - SD_f$source_start) < params_f$min_sd_len
+  SD_f = SD_f %>% group_by(pairID) %>% mutate(valid = all(source_end - source_start > params_f$min_sd_len))
+  #SD_f$lds = as.data.frame(xtabs(lendissatisfy ~ pairID, SD_f))$Freq
+  SD_f = SD_f[SD_f$valid > 0,]
   return(SD_f)
 }
 
@@ -69,6 +77,16 @@ prep_df_bed2 <- function(SDi_f){
 
 
 filter_down_SD_INV_list <- function(SDi_with_GT){
+  
+  SDi_simp = SDi_with_GT[SDi_with_GT$n_switches == 1,]
+  
+  invcenter = SDi_simp %>% group_by(inv_start) %>% slice(1)
+  invcenter = invcenter[invcenter$nnoreads < 10,]
+  invcenter = invcenter[invcenter$nlowconf < 10,]
+  return(invcenter)
+}
+
+filter_down_SD_INV_list_nofilter_but_turn <- function(SDi_with_GT){
   
   SDi_simp = SDi_with_GT[SDi_with_GT$n_switches == 1,]
   

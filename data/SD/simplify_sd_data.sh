@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
+# simplify
 cat <(echo "chr_source\tstart_source\tend_source\torientation\tchr_target\tstart_target\tend_target") <(cut -f 1,2,3,7,8,9,6 GRCh38GenomicSuperDup.bed) > SDs_simplified.bed
 
 #1/5: same chr. 

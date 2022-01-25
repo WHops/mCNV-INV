@@ -1,0 +1,11 @@
+inv_chr	inv_start	inv_end	SDpairs_orientation	SDpairs_flipped	inv_role	nref	nhet	nhom	ncomplex	ninvdup	nnoreads	nlowconf	Inversion_class	mCNV name
+chr16	14954790	15100859	-	2	b SV risk factor	3	13	27	1	0	0	3	invs_SD_inner.bed	16p13.11 recurrent microdeletion (neurocognitive disorder susceptibility locus)
+chr16	14954790	15100859	-	2	b SV risk factor	3	13	27	1	0	0	3	invs_SD_inner.bed	16p13.11 recurrent microduplication (neurocognitive disorder susceptibility locus)
+chr22	15576909	15904656	+	1	a Protective	41	0	0	3	0	0	0	invs_unprocessed.bed	Cat-Eye Syndrome (Type I)
+chr17	16823490	18384190	+	4	a Protective	41	2	0	1	0	0	0	invs_unprocessed.bed	Potocki-Lupski syndrome (17p11.2 duplication syndrome)
+chr17	16823490	18384190	+	4	a Protective	41	2	0	1	0	0	0	invs_unprocessed.bed	Smith-Magenis Syndrome
+chr17	18622359	18823773	-	2	b SV risk factor	41	2	0	1	0	0	0	invs_SD_inner.bed	Potocki-Lupski syndrome (17p11.2 duplication syndrome)
+chr17	18622359	18823773	-	2	b SV risk factor	41	2	0	1	0	0	0	invs_SD_inner.bed	Smith-Magenis Syndrome
+chrY	21021692	21063744	+	1	a Protective	5	0	9	30	0	0	0	invs_SD_inner.bed	AZFb
+chrY	21021692	21063744	+	1	a Protective	5	0	9	30	0	0	0	invs_SD_inner.bed	AZFb+AZFc
+chr17	45585159	46292045	+	2	b SV risk factor	35	8	1	0	0	0	0	invs_unprocessed.bed	17q21.31 recurrent microdeletion syndrome (Koolen de Vries syndrome)
