@@ -305,3 +305,57 @@ determine_directionality_of_affected_SDs_below_inv <- function(SD_df){
   
   return(SDi_chromcenter)
 }
+
+#' SDi_chromcenter_nswitch_gts
+#' @description Add genotypes to SD dataframe
+#'
+#' @param SD_df
+#' @param gt_link
+#' @return  SD_df but with GT fields
+#'
+#' @author Wolfram Höps
+#' @export
+add_gts <- function(SD_df, gt_link){
+  
+  gts_cols_to_keep = c(
+    'seqnames',
+    'start',
+    'end',
+    'nref',
+    'nhet',
+    'nhom',
+    'ncomplex',
+    'ninvdup',
+    'nnoreads',
+    'nlowconf'
+  )
+  
+  # Bring GTs into the game.
+  gts = read.table(gt_link, sep = '\t', header = T)[, gts_cols_to_keep]
+  colnames(gts)[1:3] = c('inv_chr', 'inv_start', 'inv_end')
+  
+  # Join...
+  SD_df_gts = left_join(SD_df,
+                        gts,
+                        by = c('inv_chr', 'inv_start', 'inv_end'))
+  
+  return(SD_df_gts)
+  
+}
+
+#' mark_inv_class
+#' @description mark_inv_class
+#'
+#' @param inv_df
+#' @param inv_noSD_link
+#' @return inv_df but with class info
+#'
+#' @author Wolfram Höps
+#' @export
+mark_inv_class <- function(inv_df, inv_noSD_link){
+  invnosd = read.table(inv_noSD_link, header = F, sep = '\t')
+  colnames(invnosd) = c('inv_chr' , 'inv_start'  , 'inv_end', 'class')
+  inv_df = left_join(inv_df, invnosd, by = c('inv_chr' , 'inv_start'  , 'inv_end'))
+  
+  return(inv_df)
+}
