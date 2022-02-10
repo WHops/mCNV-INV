@@ -359,3 +359,314 @@ mark_inv_class <- function(inv_df, inv_noSD_link){
   
   return(inv_df)
 }
+
+#' part1_find_all_SDpairs_affected_by_inv
+#' @description # Part 1: find all SD pairs which are affected by an inversion.
+#' This produces two tables that can be viewed in IGV
+#' @param
+#' @return
+#'
+#' @author Wolfram Höps
+#' 
+#' @export
+part1_find_all_SDpairs_affected_by_inv <- function(SD_link,
+                                                   params,
+                                                   outdir) {
+  # Load SD data table
+  SD = add_SD_colnames(read.table(SD_link))
+  
+  # Cut down to min len
+  SD_minlen = SD_keep_only_pairs_above_len(SD, params$min_sd_len)
+  
+  # Add some information on sdlen, pairlen, invlen
+  SD_minlen_stats = add_sd_stats(SD_minlen)
+  
+  # Exclude extremely long CNVs (>10Mb), which are not expect to appear.
+  SD_minlen_stats_pairlen = SD_minlen_stats[SD_minlen_stats$pairlen < params$max_pairlen,]
+  
+  # Keep only SDs where an inv has a potential for orientation change.
+  # This means one of them, but not both, is overlapped by the same inversion.
+  # These are the 'interesting' SDs (SDi).
+  SDi = find_SDs_with_inv_interference_potential(SD_minlen_stats_pairlen)
+  
+  SDi_save = SDi; SDi_save[,c('noverlap','sameverlap','filled')] = NULL
+  
+  # Made two bedfiles for IGV.
+  df_bed = prep_df_bed(SDi)
+  SDi_bed = SDi[, c('source_chr', 'source_start', 'source_end')]
+  
+  
+  
+  # Save results
+  if (params$save) {
+    dir.create(outdir, showWarnings = F)
+    write.table(
+      SDi_save,
+      file = paste0(outdir, '/sheetE_SDi.tsv'),
+      col.names = T,
+      row.names = F,
+      quote = F,
+      sep = '\t'
+    )
+    # write.table(
+    #   file = paste0(outdir, "/all_flipped_SD_pairs.bed"),
+    #   na.omit(df_bed),
+    #   col.names = F,
+    #   row.names = F,
+    #   quote = F,
+    #   sep = '\t'
+    # )
+    # write.table(
+    #   file = paste0(outdir, "/all_SDs_in_flipped_pairs.bed"),
+    #   na.omit(SDi_bed),
+    #   col.names = F,
+    #   row.names = F,
+    #   quote = F,
+    #   sep = '\t'
+    # )
+  }
+  
+  return(SDi)
+  
+}
+
+
+
+
+#' part2_find_protective_and_risk_inversions
+#' @description # Part 2: Find 'protective' and 'risk' Inversions:
+#' Those are inversions that lead to creation of only inverted or only direct SDs.
+#' I.e. non-messy sites :)
+#' @param
+#' @return
+#'
+#' @author Wolfram Höps
+#' @export
+part2_find_protective_and_risk_inversions <-
+  function(SDi, params, outdir) {
+    
+    SD_cols_to_keep = c(
+      'source_chr',
+      'source_start',
+      'source_end',
+      'target_end',
+      'target_start',
+      'orientation',
+      'inv_chr',
+      'inv_start',
+      'inv_end',
+      'pairID'
+    )
+    
+    colnames_mcnv_list = c('chr',
+                           'start',
+                           'end',
+                           'mCNV name',
+                           'genome',
+                           'gt',
+                           'del/dup',
+                           'len')
+    
+    # Filter to only SDs being touched by Inversions (As opposed to keeping the pairs.)
+    SDi_touch_inv = SDi[SDi$inv_chr != '.',]
+    
+    SDi_regions = SDi_touch_inv[, SD_cols_to_keep]
+    
+    # Inversion-wise statistics: are all affected SD pairs in pos or neg directions?
+    # How many SD pairs does this inversion affect?
+    SDi_chromcenter = determine_directionality_of_affected_SDs_below_inv(SDi_regions)
+    
+    # Another caveat: There are SD pairs that are affected by >1 inversions.
+    # The 'nswitch' parameter explains per SD pair, how many inversions can affect its orientation.
+    SDi_chromcenter_nswitch = SDi_chromcenter %>% group_by(pairID) %>% mutate(n_switches = length(inv_chr))
+    
+    if (params$use_only_high_confidence_invs) {
+      SDi_chromcenter_nswitch_gts = add_gts(SDi_chromcenter_nswitch, gt_link)
+      
+      # This is a big step here. We want to filter our list of affected SDs by:
+      # - SD pair should only be affected by ONE inversion (otherwise interpretation gets tricky)
+      # - Inversion should have <10 GTs with noreads or lowconf reads.
+      SDi_chromcenter_nswitch_gts_goodsamples = filter_down_SD_INV_list(SDi_chromcenter_nswitch_gts)
+    } else {
+      SDi_chromcenter_nswitch_gts_goodsamples =  SDi_chromcenter_nswitch %>% group_by(inv_chr, inv_start, inv_end) %>% slice(1)
+    }
+    
+    
+    
+    # Now, mark which inversions are likely protective, risky and mixed.
+    # We consider 'protective' if  < sds_protect_ro_risk_th of SD-pair-basepairs switch from protect to risk
+    # We consider 'risky' if > 1-x% of SD-pair-basepairs switch from protect to risk
+    inv_df = mark_protective_risk_mixed_invs(
+      invcenter = SDi_chromcenter_nswitch_gts_goodsamples,
+      n1 = params$sds_protect_ro_risk_th,
+      n2 = 1 - params$sds_protect_ro_risk_th
+    )
+    
+    # More info still. We also want to know the inversion class. SD-mediated? nonSD-mediated?
+    inv_df_class = mark_inv_class(inv_df, inv_noSD_link)
+    
+    # Save that thing
+    cols_sheetA_keep = c(
+      'inv_chr','inv_start','inv_end','inv_n_alterations','pctpos','mix'
+    )
+    write.table(
+      inv_df_class[,cols_sheetA_keep],
+      file = paste0(outdir, '/sheetA_flipping_inversions.tsv'),
+      sep = '\t',
+      quote = F,
+      col.names = T,
+      row.names = F
+    )
+    
+    
+    
+    # Add mCNVs
+    mcnv_list = read.table(mcnv_link, header = F, sep = '\t')
+    colnames(mcnv_list) = colnames_mcnv_list
+    mcnv_list$chr = paste0('chr', mcnv_list$chr)
+    
+    # Bedtools
+    inv_df_class = inv_df_class[moveme(names(inv_df_class),
+                                       "inv_chr first; inv_start after inv_chr; inv_end after inv_start")]
+    inv_df_protect_risk = inv_df_class[inv_df_class$mix != 'Mixed',]
+    
+    # Do mCNVs better...
+    SDs_flipped = left_join(SDi,
+                            inv_df_protect_risk,
+                            by = c('inv_chr', 'inv_start', 'inv_end'))
+    SDs_flipped2 = SDs_flipped[!is.na(SDs_flipped$SDpairlen),]
+    
+    # Add recurrence
+    rec = read.table(recurrence_link, header = T, sep = '\t')
+    colnames(rec)[1:3] = c('inv_chr', 'inv_start', 'inv_end')
+    rec2 = rec[, c(
+      'inv_chr',
+      'inv_start',
+      'inv_end',
+      'verdictRecurrence_hufsah',
+      'verdictRecurrence_benson'
+    )]
+    
+    # Sheet A: 
+    test = left_join(inv_df_class, rec2, by = c('inv_chr', 'inv_start', 'inv_end'))
+    
+    
+    inv_df_protect_risk = left_join(inv_df_protect_risk,
+                                    rec2,
+                                    by = c('inv_chr', 'inv_start', 'inv_end'))
+    
+    # SAVE
+    write.table(
+      inv_df_protect_risk[order(inv_df_protect_risk$inv_chr),],
+      file = paste0(outdir, '/sheetB_protect_risk_loci.tsv'),
+      sep = '\t',
+      quote = F,
+      col.names = T,
+      row.names = F
+    )
+    
+    
+    overlap_main = bedtoolsr::bt.intersect(inv_df_protect_risk, mcnv_list, wao =
+                                             T)
+    colnames(overlap_main) = c(colnames(inv_df_protect_risk), colnames(mcnv_list))
+    
+    SDs_flipped2$min = rowMins(as.matrix(SDs_flipped2[, c('source_start.x',
+                                                          'target_start.x',
+                                                          'source_end.x',
+                                                          'target_end.x')]))
+    SDs_flipped2$max = rowMaxs(as.matrix(SDs_flipped2[, c('source_start.x',
+                                                          'target_start.x',
+                                                          'source_end.x',
+                                                          'target_end.x')]))
+    
+    SDs_flipped3 = SDs_flipped2[moveme(names(SDs_flipped2),
+                                       "source_chr.x first; min after source_chr.x; max after min")]
+    
+    overlap_sec = bedtoolsr::bt.intersect(SDs_flipped3, mcnv_list, wao = T)
+    colnames(overlap_sec) = c(colnames(SDs_flipped3), colnames(mcnv_list))
+    
+    overlap_sec_to_save_cols = c(
+      'source_chr.x',
+      'min',
+      'max',
+      'orientation.x',
+      'pairID.x',
+      'inv_chr',
+      'inv_start',
+      'inv_end',
+      'source_start.y',
+      'mix',
+      'n_switches',
+      'chr',
+      'start',
+      'end',
+      'mCNV name',
+      'gt',
+      'del/dup',
+      'len'
+    )
+    
+    overlap_save = overlap_sec[(overlap_sec$n_switches == 1), overlap_sec_to_save_cols]
+    overlap_save2 = overlap_save[(overlap_save$`mCNV name` != '.'),]
+    write.table(
+      overlap_save2,
+      file = paste0(outdir, '/sheetD_flipped_SD_pairs_overlapping_mCNVs.tsv'),
+      row.names = F,
+      col.names = T,
+      sep = '\t',
+      quote = F
+    )
+    overlap_main2 = dplyr::left_join(overlap_main, rec2, by = c('inv_chr', 'inv_start', 'inv_end'))
+    
+    
+    # # To_save
+    cols_to_save = c(
+      'inv_chr',
+      'inv_start',
+      'inv_end',
+      'orientation',
+      'inv_n_alterations',
+      'mix',
+      'nref',
+      'nhet',
+      'nhom',
+      'ncomplex',
+      'ninvdup',
+      'nnoreads',
+      'nlowconf',
+      'class',
+      'mCNV name'
+    )
+    
+    colnames(overlap_save) = stringr::word(colnames(overlap_save),1,sep = "\\.")
+    overlap_save = overlap_main2[, cols_to_save]
+    overlap_save = overlap_save[overlap_save$`mCNV name` != '.',]
+    colnames(overlap_save)[colnames(overlap_save) == 'orientation'] = 'SDpairs_orientation'
+    colnames(overlap_save)[colnames(overlap_save) == 'inv_n_alterations'] = 'SDpairs_flipped'
+    colnames(overlap_save)[colnames(overlap_save) == 'class'] = 'Inversion_class'
+    colnames(overlap_save)[colnames(overlap_save) == 'mix'] = 'inv_role'
+    
+    write.table(
+      overlap_save,
+      file = paste0(outdir, '/sheetC_invs_affecting_sds_affecting_mcnvs_strict.tsv'),
+      row.names = F,
+      col.names = T,
+      quote = F,
+      sep = '\t'
+    )
+    ### Now
+    # Made a bedfile for igv
+    # inv_df_bed = prep_df_bed2(inv_df[inv_df$mix != 'Mixed',])
+    # write.table(
+    #   inv_df_bed,
+    #   file = paste0(outdir, '/bedversion_sheetB_protect_risk.bed'),
+    #   sep = '\t',
+    #   col.names = F,
+    #   row.names = F,
+    #   quote = F
+    # )
+    # Make another bedfile for igv^^
+    SDi_bed = SDi[, c('source_chr', 'source_start', 'source_end')]
+    
+  }
+
