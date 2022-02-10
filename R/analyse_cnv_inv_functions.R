@@ -292,7 +292,7 @@ moveme <- function (invec, movecommand) {
 #' @author Wolfram Höps
 #' @export
 determine_directionality_of_affected_SDs_below_inv <- function(SD_df){
-  SDi_chromcenter = SDi_regions %>% group_by(inv_start) %>% mutate(
+  SDi_chromcenter = SD_df %>% group_by(inv_start) %>% mutate(
     inv_n_alterations = length(inv_chr),
     allp = all(orientation == '+'),
     alln = all(orientation == '-'),

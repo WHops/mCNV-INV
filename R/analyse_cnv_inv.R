@@ -6,6 +6,8 @@ library(dplyr)
 library(ggplot2)
 library(ggbeeswarm)
 library(matrixStats)
+library(stringr)
+
 source('./analyse_cnv_inv_functions.R')
 
 
@@ -35,6 +37,7 @@ outdir = '../res/'
 #' @return
 #'
 #' @author Wolfram Höps
+#' 
 #' @export
 part1_find_all_SDpairs_affected_by_inv <- function(SD_link,
                                                    params,
@@ -56,25 +59,27 @@ part1_find_all_SDpairs_affected_by_inv <- function(SD_link,
   # These are the 'interesting' SDs (SDi).
   SDi = find_SDs_with_inv_interference_potential(SD_minlen_stats_pairlen)
   
-
+  SDi_save = SDi; SDi_save[,c('noverlap','sameverlap','filled')] = NULL
   
   # Made two bedfiles for IGV.
   df_bed = prep_df_bed(SDi)
   SDi_bed = SDi[, c('source_chr', 'source_start', 'source_end')]
   
+  
+  
   # Save results
   if (params$save) {
     dir.create(outdir, showWarnings = F)
     write.table(
-      SDi,
-      file = paste0(outdir, '/SDi.tsv'),
+      SDi_save,
+      file = paste0(outdir, '/sheetE_SDi.tsv'),
       col.names = T,
       row.names = F,
       quote = F,
       sep = '\t'
     )
     write.table(
-      file = paste0(outdir, "/bedfile_1.bed"),
+      file = paste0(outdir, "/all_flipped_SD_pairs.bed"),
       na.omit(df_bed),
       col.names = F,
       row.names = F,
@@ -82,7 +87,7 @@ part1_find_all_SDpairs_affected_by_inv <- function(SD_link,
       sep = '\t'
     )
     write.table(
-      file = paste0(outdir, "/bedfile_2.bed"),
+      file = paste0(outdir, "/all_SDs_in_flipped_pairs.bed"),
       na.omit(SDi_bed),
       col.names = F,
       row.names = F,
@@ -110,6 +115,7 @@ part1_find_all_SDpairs_affected_by_inv <- function(SD_link,
 #' @export
 part2_find_protective_and_risk_inversions <-
   function(SDi) {
+    
     SD_cols_to_keep = c(
       'source_chr',
       'source_start',
@@ -156,6 +162,8 @@ part2_find_protective_and_risk_inversions <-
       SDi_chromcenter_nswitch_gts_goodsamples =  SDi_chromcenter_nswitch %>% group_by(inv_chr, inv_start, inv_end) %>% slice(1)
     }
     
+
+    
     # Now, mark which inversions are likely protective, risky and mixed.
     # We consider 'protective' if  < sds_protect_ro_risk_th of SD-pair-basepairs switch from protect to risk
     # We consider 'risky' if > 1-x% of SD-pair-basepairs switch from protect to risk
@@ -167,6 +175,21 @@ part2_find_protective_and_risk_inversions <-
     
     # More info still. We also want to know the inversion class. SD-mediated? nonSD-mediated?
     inv_df_class = mark_inv_class(inv_df, inv_noSD_link)
+    
+    # Save that thing
+    cols_sheetA_keep = c(
+      'inv_chr','inv_start','inv_end','inv_n_alterations','pctpos','mix'
+    )
+    write.table(
+      inv_df_class[,cols_sheetA_keep],
+      file = paste0(outdir, '/sheetA_flipping_inversions.tsv'),
+      sep = '\t',
+      quote = F,
+      col.names = T,
+      row.names = F
+    )
+    
+    
     
     # Add mCNVs
     mcnv_list = read.table(mcnv_link, header = F, sep = '\t')
@@ -195,6 +218,10 @@ part2_find_protective_and_risk_inversions <-
       'verdictRecurrence_benson'
     )]
     
+    # Sheet A: Invs s
+    test = left_join(inv_df_class, rec2, by = c('inv_chr', 'inv_start', 'inv_end'))
+    
+    
     inv_df_protect_risk = left_join(inv_df_protect_risk,
                                        rec2,
                                        by = c('inv_chr', 'inv_start', 'inv_end'))
@@ -202,7 +229,7 @@ part2_find_protective_and_risk_inversions <-
     # SAVE
     write.table(
       inv_df_protect_risk[order(inv_df_protect_risk$inv_chr),],
-      file = paste0(outdir, '/protect_risk_loci.tsv'),
+      file = paste0(outdir, '/sheetB_protect_risk_loci.tsv'),
       sep = '\t',
       quote = F,
       col.names = T,
@@ -254,7 +281,7 @@ part2_find_protective_and_risk_inversions <-
     overlap_save2 = overlap_save[(overlap_save$`mCNV name` != '.'),]
     write.table(
       overlap_save2,
-      file = paste0(outdir, '/flipped_SD_pairs_overlapping_mCNVs.txt'),
+      file = paste0(outdir, '/sheetD_flipped_SD_pairs_overlapping_mCNVs.txt'),
       row.names = F,
       col.names = T,
       sep = '\t',
@@ -263,7 +290,7 @@ part2_find_protective_and_risk_inversions <-
     overlap_main2 = left_join(overlap_main, rec2, by = c('inv_chr', 'inv_start', 'inv_end'))
     
     
-    # To_save
+    # # To_save
     cols_to_save = c(
       'inv_chr',
       'inv_start',
@@ -281,16 +308,18 @@ part2_find_protective_and_risk_inversions <-
       'class',
       'mCNV name'
     )
-    overlap_save = overlap_main[, cols_to_save]
+
+    colnames(overlap_save) = stringr::word(colnames(overlap_save),1,sep = "\\.")
+    overlap_save = overlap_main2[, cols_to_save]
     overlap_save = overlap_save[overlap_save$`mCNV name` != '.',]
     colnames(overlap_save)[colnames(overlap_save) == 'orientation'] = 'SDpairs_orientation'
     colnames(overlap_save)[colnames(overlap_save) == 'inv_n_alterations'] = 'SDpairs_flipped'
     colnames(overlap_save)[colnames(overlap_save) == 'class'] = 'Inversion_class'
     colnames(overlap_save)[colnames(overlap_save) == 'mix'] = 'inv_role'
-    
+
     write.table(
       overlap_save,
-      file = paste0(outdir, '/invs_affecting_sds_affecting_mcnvs_strict.tsv'),
+      file = paste0(outdir, '/sheetC_invs_affecting_sds_affecting_mcnvs_strict.tsv'),
       row.names = F,
       col.names = T,
       quote = F,
@@ -301,7 +330,7 @@ part2_find_protective_and_risk_inversions <-
     inv_df_bed = prep_df_bed2(inv_df[inv_df$mix != 'Mixed',])
     write.table(
       inv_df_bed,
-      file = paste0(outdir, '/protect_risk.bed'),
+      file = paste0(outdir, '/bedversion_sheetB_protect_risk.bed'),
       sep = '\t',
       col.names = F,
       row.names = F,
