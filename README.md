@@ -23,13 +23,11 @@ Input tables are to be stored in data/ and its subfolders. Required files:
 	data/SD/SDs_with_inv.bed # Table containing SDs, including columns defining their overlapping inversions
 	data/mCNV/mcnvs.tsv		# Table containing morbid CNVs, in table format obtained from decipher database 
 
-### Parameters
-
 
 
 ### Instructions	
 
-Optional: you can adjust parameters (such as minimal/maximal SD size) in the header of *analyse_cnv_inv_wrapper.R.
+Optional: you can adjust parameters (such as minimal/maximal SD size) in the header of *analyse_cnv_inv_wrapper.R*.
 
 Run the wrapper script using: 
  `Rscript R/analyse_cnv_inv_wrapper.R `
@@ -53,3 +51,4 @@ Output files are by default, stored in *res/*
 
 This code is associated to our publication on human inversion recurrence:
 Porubsky et al., 2021 (https://doi.org/10.1101/2021.12.20.472354)
+
