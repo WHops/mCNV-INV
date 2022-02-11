@@ -35,8 +35,9 @@ Run the wrapper script using:
 
 ### Output
 
-Output files are by default, stored in *res/* 
-	The main wrapper script will produce five output tables, named after sheets A-E of table S11, reported in Porubsky et al. 2021.
+Output files are by default, stored in *res/*. 
+
+The main wrapper script will produce five output tables, named after sheets A-E of table S11, reported in Porubsky et al. 2021.
 
 	sheetA_flipping_inversions.tsv	Inversions affecting SD pairs
 	sheetB_protect_risk_loci.tsv	Inversions 'flipping' SD-pairs in the same orientation
